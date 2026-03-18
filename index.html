@@ -2,52 +2,31 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>本格将棋アプリ - 最終完成版</title>
+    <title>本格将棋アプリ - 打ち歩詰め禁止版</title>
     <style>
- :root { --board-bg: #f3c35d; --cell-size: 60px; }
-    body { display: flex; flex-direction: column; align-items: center; background: #eee; font-family: "Sawarabi Mincho", serif; padding: 20px; }
-    #game-container { display: flex; gap: 20px; align-items: flex-start; }
-    .hand-area { width: 150px; background: #e0d0b0; border: 2px solid #666; padding: 10px; min-height: 350px; border-radius: 5px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
-    #board { display: grid; grid-template-columns: repeat(9, var(--cell-size)); background: var(--board-bg); border: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
-    .cell { width: var(--cell-size); height: var(--cell-size); border: 0.5px solid #333; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; }
-    
-    /* 駒の五角形デザイン */
-    .piece {
-        width: 48px;
-        height: 54px;
-        background: linear-gradient(145deg, #ffedbc, #e2bc63);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        /* 将棋駒の五角形クリップパス */
-        clip-path: polygon(50% 0%, 100% 20%, 90% 100%, 10% 100%, 0% 20%);
-        font-size: 26px;
-        font-weight: bold;
-        user-select: none;
-        box-shadow: inset 0 -3px rgba(0,0,0,0.2);
-    }
-    .piece.sente { color: #000; }
-    .piece.gote { color: #000; transform: rotate(180deg); }
-    .piece.promoted { color: #d32f2f; }
-
-    /* 選択中と移動可能マスの色 */
-    .selected .piece { background: #ffeb3b !important; }
-    .movable::after { content: ""; width: 16px; height: 16px; background: rgba(0,0,0,0.15); border-radius: 50%; position: absolute; z-index: 10; }
-    
-    /* 持ち駒のデザイン（五角形） */
-    .hand-piece {
-        display: inline-flex !important;
-        margin: 4px;
-        width: 40px;
-        height: 45px;
-        background: #ffedbc;
-        clip-path: polygon(50% 0%, 100% 20%, 90% 100%, 10% 100%, 0% 20%);
-        justify-content: center;
-        align-items: center;
-        font-size: 22px;
-        cursor: pointer;
-    }
-    .hand-piece.selected { background: #ffeb3b; transform: scale(1.1); }
+        :root { --board-bg: #f3c35d; --cell-size: 60px; }
+        body { display: flex; flex-direction: column; align-items: center; background: #eee; font-family: "Sawarabi Mincho", serif; padding: 20px; }
+        #game-container { display: flex; gap: 20px; align-items: flex-start; }
+        .hand-area { width: 150px; background: #e0d0b0; border: 2px solid #666; padding: 10px; min-height: 350px; border-radius: 5px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+        #board { display: grid; grid-template-columns: repeat(9, var(--cell-size)); background: var(--board-bg); border: 2px solid #333; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .cell { width: var(--cell-size); height: var(--cell-size); border: 0.5px solid #333; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; }
+        
+        .piece {
+            width: 48px; height: 54px;
+            background: linear-gradient(145deg, #ffedbc, #e2bc63);
+            display: flex; justify-content: center; align-items: center;
+            clip-path: polygon(50% 0%, 100% 20%, 90% 100%, 10% 100%, 0% 20%);
+            font-size: 26px; font-weight: bold; user-select: none;
+            box-shadow: inset 0 -3px rgba(0,0,0,0.2);
+        }
+        .piece.sente { color: #000; }
+        .piece.gote { color: #000; transform: rotate(180deg); }
+        .piece.promoted { color: #d32f2f; }
+        .selected .piece { background: #ffeb3b !important; }
+        .movable::after { content: ""; width: 16px; height: 16px; background: rgba(0,0,0,0.15); border-radius: 50%; position: absolute; z-index: 10; }
+        #status { margin-bottom: 15px; font-size: 1.3rem; font-weight: bold; padding: 10px 30px; background: white; border-radius: 30px; }
+        .hand-piece { display: inline-flex !important; margin: 4px; width: 40px; height: 45px; background: #ffedbc; clip-path: polygon(50% 0%, 100% 20%, 90% 100%, 10% 100%, 0% 20%); justify-content: center; align-items: center; font-size: 22px; cursor: pointer; }
+        .hand-piece.selected { background: #ffeb3b; transform: scale(1.1); }
     </style>
 </head>
 <body>
@@ -66,7 +45,6 @@ let board = Array(9).fill().map(() => Array(9).fill(null));
 let hands = { [SENTE]: [], [GOTE]: [] };
 let selected = null; 
 
-// 駒の定義
 const PIECE_DATA = {
     '歩': { moves: [[-1, 0]], jump: false, promote: 'と' },
     '香': { moves: [[-1, 0]], jump: true, promote: '杏' },
@@ -81,32 +59,25 @@ const PIECE_DATA = {
     '龍': { moves: [[-1, 0], [1, 0], [0, -1], [0, 1]], jump: true, extra: [[-1,-1],[-1,1],[1,-1],[1,1]] }
 };
 
-// --- ロジック系関数 ---
+// --- 将棋ロジック ---
 
 function getRawMoves(r, c, p) {
     let valid = [];
-    const type = p.type;
-    const isGoldType = PIECE_DATA[type].gold;
-    const data = isGoldType ? PIECE_DATA['金'] : PIECE_DATA[type];
+    const isGoldType = PIECE_DATA[p.type].gold;
+    const data = isGoldType ? PIECE_DATA['金'] : PIECE_DATA[p.type];
     
-    // 1. 基本の動き（スライド移動 or 1マス移動）
     data.moves.forEach(([dr, dc]) => {
         let nr = r + dr * p.owner, nc = c + dc * p.owner;
         if (data.jump && !isGoldType) {
             while (nr >= 0 && nr < 9 && nc >= 0 && nc < 9) {
-                if (!board[nr][nc]) { valid.push([nr, nc]); }
-                else {
-                    if (board[nr][nc].owner !== p.owner) valid.push([nr, nc]);
-                    break;
-                }
+                if (!board[nr][nc]) valid.push([nr, nc]);
+                else { if (board[nr][nc].owner !== p.owner) valid.push([nr, nc]); break; }
                 nr += dr * p.owner; nc += dc * p.owner;
             }
         } else if (nr >= 0 && nr < 9 && nc >= 0 && nc < 9) {
             if (!board[nr][nc] || board[nr][nc].owner !== p.owner) valid.push([nr, nc]);
         }
     });
-
-    // 2. 龍・馬の追加1マス移動(extra)
     if (data.extra) {
         data.extra.forEach(([dr, dc]) => {
             let nr = r + dr, nc = c + dc;
@@ -146,20 +117,17 @@ function getLegalMoves(r, c) {
 
 function isMate(color) {
     if (!isCheck(color)) return false;
+    // 盤上の全駒の移動シミュレーション
     for (let r=0; r<9; r++) {
         for (let c=0; c<9; c++) {
             if (board[r][c]?.owner === color && getLegalMoves(r, c).length > 0) return false;
         }
     }
+    // 持ち駒を打って回避できるか
     for (let type of [...new Set(hands[color])]) {
         for (let r=0; r<9; r++) {
             for (let c=0; c<9; c++) {
                 if (!board[r][c]) {
-                    if (type === '歩') {
-                        let hasFu = false;
-                        for(let i=0; i<9; i++) if(board[i][c]?.type==='歩' && board[i][c]?.owner===color) hasFu=true;
-                        if (hasFu) continue;
-                    }
                     board[r][c] = { type, owner: color };
                     const safe = !isCheck(color);
                     board[r][c] = null;
@@ -177,21 +145,31 @@ function findKing(owner) {
     return null;
 }
 
-// --- 操作系関数 ---
+// --- アクション ---
 
-function handleSquareClick(r, c) {
-    if (selected?.type === 'hand') {
-        if (!board[r][c]) dropPiece(r, c);
-        else selected = null;
-    } else if (selected?.type === 'board') {
-        const moves = getLegalMoves(selected.r, selected.c);
-        if (selected.r === r && selected.c === c) selected = null;
-        else if (moves.some(m => m[0] === r && m[1] === c)) movePiece(selected.r, selected.c, r, c);
-        else selected = (board[r][c]?.owner === turn) ? { type: 'board', r, c } : null;
-    } else {
-        if (board[r][c]?.owner === turn) selected = { type: 'board', r, c };
+function dropPiece(r, c) {
+    const type = selected.pieceType;
+    // 二歩チェック
+    if (type === '歩') {
+        for(let i=0; i<9; i++) if(board[i][c]?.type==='歩' && board[i][c]?.owner===turn) return alert("二歩は反則です");
     }
-    render();
+    // 行き場のない駒
+    if ((type==='歩'||type==='香') && (turn===SENTE?r===0:r===8)) return alert("行き場がありません");
+    if (type==='桂' && (turn===SENTE?r<=1:r>=7)) return alert("行き場がありません");
+
+    // 打ち歩詰めチェック
+    if (type === '歩') {
+        board[r][c] = { type, owner: turn };
+        if (isMate(-turn)) {
+            board[r][c] = null;
+            return alert("打ち歩詰めは反則です");
+        }
+        board[r][c] = null;
+    }
+
+    board[r][c] = { type, owner: turn };
+    hands[turn].splice(selected.pieceIndex, 1);
+    finalizeTurn();
 }
 
 function movePiece(fr, fc, tr, tc) {
@@ -208,52 +186,41 @@ function movePiece(fr, fc, tr, tc) {
     finalizeTurn();
 }
 
-function dropPiece(r, c) {
-    const type = selected.pieceType;
-    if (type === '歩') {
-        for(let i=0; i<9; i++) if(board[i][c]?.type==='歩' && board[i][c]?.owner===turn) return alert("二歩です");
-    }
-    if ((type==='歩'||type==='香') && (turn===SENTE?r===0:r===8)) return alert("行き場がありません");
-    if (type==='桂' && (turn===SENTE?r<=1:r>=7)) return alert("行き場がありません");
-
-    board[r][c] = { type, owner: turn };
-    hands[turn].splice(selected.pieceIndex, 1);
-    finalizeTurn();
+function finalizeTurn() {
+    turn *= -1; selected = null; render();
+    if (isMate(turn)) setTimeout(() => alert((turn === SENTE ? "後手" : "先手") + "の勝ちです！"), 100);
 }
 
-function finalizeTurn() {
-    turn *= -1;
-    selected = null;
+function handleSquareClick(r, c) {
+    if (selected?.type === 'hand') {
+        if (!board[r][c]) dropPiece(r, c);
+        else selected = null;
+    } else if (selected?.type === 'board') {
+        const moves = getLegalMoves(selected.r, selected.c);
+        if (selected.r === r && selected.c === c) selected = null;
+        else if (moves.some(m => m[0] === r && m[1] === c)) movePiece(selected.r, selected.c, r, c);
+        else selected = (board[r][c]?.owner === turn) ? { type: 'board', r, c } : null;
+    } else {
+        if (board[r][c]?.owner === turn) selected = { type: 'board', r, c };
+    }
     render();
-    if (isMate(turn)) setTimeout(() => alert((turn === SENTE ? "後手" : "先手") + "の勝ちです！"), 100);
 }
 
 function render() {
     const boardEl = document.getElementById('board');
     boardEl.innerHTML = '';
     const moves = (selected?.type === 'board') ? getLegalMoves(selected.r, selected.c) : [];
-
     for(let r=0; r<9; r++) {
         for(let c=0; c<9; c++) {
             const cell = document.createElement('div');
-            // マス目自体のクラス設定
-            cell.className = `cell ${selected?.type === 'board' && selected.r === r && selected.c === c ? 'selected' : ''}`;
+            cell.className = `cell ${selected?.r===r && selected?.c===c ? 'selected' : ''}`;
             if (moves.some(m => m[0] === r && m[1] === c)) cell.classList.add('movable');
-            
             const p = board[r][c];
-            if(p) {
-                const isPromoted = ['と','杏','圭','全','馬','龍'].includes(p.type);
-                // 駒をdiv要素として作成（五角形のスタイルを適用）
-                cell.innerHTML = `<div class="piece ${p.owner===SENTE?'sente':'gote'} ${isPromoted?'promoted':''}">
-                                    ${p.type}
-                                  </div>`;
-            }
+            if(p) cell.innerHTML = `<div class="piece ${p.owner===SENTE?'sente':'gote'} ${['と','杏','圭','全','馬','龍'].includes(p.type)?'promoted':''}"> ${p.type} </div>`;
             cell.onclick = () => handleSquareClick(r, c);
             boardEl.appendChild(cell);
         }
     }
-
-    // 持ち駒の描画更新
     [SENTE, GOTE].forEach(owner => {
         const side = owner === SENTE ? 'sente' : 'gote';
         const el = document.getElementById(`hand-${side}`);
@@ -262,24 +229,18 @@ function render() {
             const div = document.createElement('div');
             div.className = `hand-piece ${selected?.type==='hand'&&selected.pieceIndex===i&&turn===owner?'selected':''}`;
             div.textContent = p;
-            div.onclick = (e) => { 
-                e.stopPropagation(); 
-                if(turn===owner) { 
-                    if(selected?.pieceIndex===i) selected=null; 
-                    else selected={type:'hand', pieceType:p, pieceIndex:i};
-                    render();
-                }
-            };
+            div.onclick = (e) => { e.stopPropagation(); if(turn===owner) { if(selected?.pieceIndex===i) selected=null; else selected={type:'hand', pieceType:p, pieceIndex:i}; render(); }};
             el.appendChild(div);
         });
     });
     document.getElementById('status').textContent = (turn === SENTE ? "先手" : "後手") + "の番です" + (isCheck(turn) ? "（王手！）" : "");
 }
+
 function init() {
     const line = ["香","桂","銀","金","玉","金","銀","桂","香"];
     for(let i=0; i<9; i++) {
         board[0][i] = { type: line[i], owner: GOTE }; board[8][i] = { type: line[i], owner: SENTE };
-        board[2][i] = { type: '歩', owner: GOTE }; board[6][i] = { type: '歩', owner: SENTE };
+        board[2][i] = { type: '歩' , owner: GOTE }; board[6][i] = { type: '歩', owner: SENTE };
     }
     board[1][1] = { type: '飛', owner: GOTE }; board[1][7] = { type: '角', owner: GOTE };
     board[7][1] = { type: '角', owner: SENTE }; board[7][7] = { type: '飛', owner: SENTE };
