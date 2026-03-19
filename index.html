@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>将棋アプリ - CPU動作改善版</title>
+    <title>将棋アプリ - CPU改善版</title>
     <style>
         :root { --board-bg: #f3c35d; --cell-size: 60px; }
         body { display: flex; flex-direction: column; align-items: center; background: #eee; font-family: "Sawarabi Mincho", serif; padding: 20px; }
@@ -23,12 +23,12 @@
         #board { display: grid; grid-template-columns: repeat(9, var(--cell-size)); background: var(--board-bg); border: 2px solid #333; }
         .cell { width: var(--cell-size); height: var(--cell-size); border: 0.5px solid #333; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; }
         
-        /* コンピュータの移動元も黄色で強調 */
-        .last-move-origin { background-color: rgba(255, 235, 59, 0.7) !important; border: 2px solid #fbc02d; box-sizing: border-box; }
-        /* 移動先は少しオレンジ寄りの強調 */
-        .last-move-target { background-color: rgba(255, 87, 34, 0.3) !important; }
+        /* 重要な修正：移動元（駒があった場所）を人と同じ黄色に */
+        .last-move-origin { background-color: #ffeb3b !important; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
+        /* 移動先（駒が置かれた場所）を薄い強調色に */
+        .last-move-target { background-color: rgba(255, 152, 0, 0.4) !important; }
 
-        .selected { background-color: rgba(255, 235, 59, 0.6) !important; }
+        .selected { background-color: #ffeb3b !important; }
         .movable::after { content: ""; width: 16px; height: 16px; background: rgba(0,0,0,0.15); border-radius: 50%; position: absolute; }
 
         .piece {
@@ -46,7 +46,7 @@
             background: #ffedbc; clip-path: polygon(50% 0%, 100% 20%, 90% 100%, 10% 100%, 0% 20%); 
             justify-content: center; align-items: center; font-size: 22px; cursor: pointer; 
         }
-        .hand-piece.selected { background: #ffeb3b !important; transform: scale(1.15) translateY(-5px); outline: 2px solid #1565c0; }
+        .hand-piece.selected { background: #ffeb3b !important; transform: scale(1.1); outline: 2px solid #1565c0; }
     </style>
 </head>
 <body>
@@ -90,12 +90,7 @@ const PIECE_DATA = {
 
 // --- ゲーム管理 ---
 function saveHistory() {
-    history.push({ 
-        board: JSON.parse(JSON.stringify(board)), 
-        hands: JSON.parse(JSON.stringify(hands)), 
-        turn, 
-        lastMove: lastMove ? {...lastMove} : null 
-    });
+    history.push({ board: JSON.parse(JSON.stringify(board)), hands: JSON.parse(JSON.stringify(hands)), turn, lastMove: lastMove ? {...lastMove} : null });
     document.getElementById('undo-btn').disabled = false;
 }
 
@@ -108,8 +103,7 @@ function undo() {
             board = last.board; hands = last.hands; turn = last.turn; lastMove = last.lastMove;
         }
     }
-    selected = null;
-    if (history.length === 0) document.getElementById('undo-btn').disabled = true;
+    selected = null; if (history.length === 0) document.getElementById('undo-btn').disabled = true;
     render();
 }
 
@@ -118,7 +112,7 @@ function toggleCPU() {
     const btn = document.getElementById('cpu-toggle');
     btn.textContent = `コンピュータ対戦: ${isCPUMode ? 'ON' : 'OFF'}`;
     btn.classList.toggle('active', isCPUMode);
-    if (isCPUMode && turn === GOTE) setTimeout(cpuThink, 1500); // 思考開始までのタメ
+    if (isCPUMode && turn === GOTE) setTimeout(cpuThink, 1500); 
 }
 
 function resetGame() {
@@ -126,14 +120,17 @@ function resetGame() {
         board = Array(9).fill().map(() => Array(9).fill(null));
         hands = { [SENTE]: [], [GOTE]: [] };
         history = []; lastMove = null; turn = SENTE; selected = null;
-        isCPUMode = false;
-        document.getElementById('cpu-toggle').textContent = "コンピュータ対戦: OFF";
-        document.getElementById('cpu-toggle').classList.remove('active');
-        init();
+        isCPUMode = false; updateUI(); init();
     }
 }
 
-// --- 判定ロジック ---
+function updateUI() {
+    const btn = document.getElementById('cpu-toggle');
+    btn.textContent = `コンピュータ対戦: ${isCPUMode ? 'ON' : 'OFF'}`;
+    if (!isCPUMode) btn.classList.remove('active');
+}
+
+// --- ロジック ---
 function getRawMoves(r, c, p) {
     let valid = []; const isGold = PIECE_DATA[p.type].gold; const data = isGold ? PIECE_DATA['金'] : PIECE_DATA[p.type];
     data.moves.forEach(([dr, dc]) => {
@@ -186,16 +183,13 @@ function isMate(color) {
     return true;
 }
 
-// --- コンピュータ思考 ---
+// --- CPU思考プロセス（最大1.5秒） ---
 function cpuThink() {
     if (turn !== GOTE || isMate(turn)) return;
-    
-    // 思考中であることを示すステータス（任意）
-    document.getElementById('status').textContent = "後手（CPU）が考えています...";
+    document.getElementById('status').textContent = "後手（CPU）が思考中...";
 
-    // 実際の指し手決定
+    // 1500ms(1.5秒) 待ってから指す
     setTimeout(() => {
-        saveHistory();
         let moves = [];
         for (let r=0; r<9; r++) for (let c=0; c<9; c++) if (board[r][c]?.owner === GOTE)
             getLegalMoves(r, c).forEach(m => {
@@ -215,14 +209,12 @@ function cpuThink() {
         });
 
         if (moves.length > 0) {
+            saveHistory();
             moves.sort((a, b) => b.score - a.score);
             const choice = moves.filter(m => m.score === moves[0].score)[Math.floor(Math.random() * moves.filter(m => m.score === moves[0].score).length)];
             if (choice.type === 'move') {
                 const p = board[choice.fr][choice.fc];
-                if (PIECE_DATA[p.type].promote && (choice.tr >= 6 || choice.fr >= 6)) {
-                    // CPUは成れるなら基本的に成る
-                    p.type = PIECE_DATA[p.type].promote;
-                }
+                if (PIECE_DATA[p.type].promote && (choice.tr >= 6 || choice.fr >= 6)) p.type = PIECE_DATA[p.type].promote;
                 if (board[choice.tr][choice.tc]) {
                     let t = board[choice.tr][choice.tc].type; for (let k in PIECE_DATA) if(PIECE_DATA[k].promote === t) t = k;
                     hands[GOTE].push(t);
@@ -236,13 +228,13 @@ function cpuThink() {
             }
             finalizeTurn();
         }
-    }, 500); // 思考決定プロセスにさらに少しの間を置く
+    }, 1500); 
 }
 
 function finalizeTurn() {
     turn *= -1; selected = null; render();
     if (isMate(turn)) setTimeout(() => alert((turn === SENTE ? "後手" : "先手") + "の勝ちです！"), 100);
-    else if (isCPUMode && turn === GOTE) setTimeout(cpuThink, 1500); // 次のCPUの手番までの待ち時間
+    else if (isCPUMode && turn === GOTE) setTimeout(cpuThink, 0); // ここでの待機はcpuThink内のsetTimeoutに集約
 }
 
 // --- 描画・操作 ---
@@ -274,18 +266,13 @@ function render() {
     const moves = (selected?.type === 'board') ? getLegalMoves(selected.r, selected.c) : [];
     for(let r=0; r<9; r++) for(let c=0; c<9; c++) {
         const cell = document.createElement('div'); cell.className = 'cell';
-        
-        // 直前の指し手のハイライト（移動元を黄色、移動先をオレンジに）
         if (lastMove) {
+            // 移動元を黄色（selectedと同じ）、移動先を別の強調色に
             if (lastMove.fr === r && lastMove.fc === c) cell.classList.add('last-move-origin');
             if (lastMove.tr === r && lastMove.tc === c) cell.classList.add('last-move-target');
         }
-        
-        // 自分が現在選択している駒の黄色ハイライト
-        if (selected?.type === 'board' && selected.r === r && selected.c === c) cell.classList.add('selected');
-        
+        if (selected?.r === r && selected?.c === c) cell.classList.add('selected');
         if (moves.some(m => m[0] === r && m[1] === c)) cell.classList.add('movable');
-        
         const p = board[r][c];
         if(p) cell.innerHTML = `<div class="piece ${p.owner===SENTE?'sente':'gote'} ${['と','杏','圭','全','馬','龍'].includes(p.type)?'promoted':''}"> ${p.type} </div>`;
         cell.onclick = () => handleSquareClick(r, c); boardEl.appendChild(cell);
