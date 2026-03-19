@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>将棋アプリ - 持ち駒操作改善版</title>
+    <title>将棋アプリ - コンピュータの動き強調版</title>
     <style>
         :root { --board-bg: #f3c35d; --cell-size: 60px; }
         body { display: flex; flex-direction: column; align-items: center; background: #eee; font-family: "Sawarabi Mincho", serif; padding: 20px; }
@@ -22,7 +22,9 @@
         #board { display: grid; grid-template-columns: repeat(9, var(--cell-size)); background: var(--board-bg); border: 2px solid #333; }
         .cell { width: var(--cell-size); height: var(--cell-size); border: 0.5px solid #333; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; }
         
-        /* 駒の基本デザイン */
+        /* 直前の指し手のハイライト */
+        .last-move { background-color: rgba(255, 87, 34, 0.4) !important; }
+
         .piece {
             width: 48px; height: 54px; background: linear-gradient(145deg, #ffedbc, #e2bc63);
             display: flex; justify-content: center; align-items: center;
@@ -34,15 +36,9 @@
         .piece.gote { color: #000; transform: rotate(180deg); }
         .piece.promoted { color: #d32f2f; }
 
-        /* 盤上の駒の選択中スタイル */
-        .selected .piece { 
-            background: #ffeb3b !important; 
-            box-shadow: 0 0 10px #fbc02d;
-            transform: scale(1.05);
-        }
+        .selected .piece { background: #ffeb3b !important; transform: scale(1.05); }
         .movable::after { content: ""; width: 16px; height: 16px; background: rgba(0,0,0,0.15); border-radius: 50%; position: absolute; }
         
-        /* 持ち駒の選択中スタイル */
         .hand-piece { 
             display: inline-flex !important; margin: 4px; width: 40px; height: 45px; 
             background: #ffedbc; clip-path: polygon(50% 0%, 100% 20%, 90% 100%, 10% 100%, 0% 20%); 
@@ -50,11 +46,8 @@
             transition: all 0.2s;
         }
         .hand-piece.selected { 
-            background: #ffeb3b !important; 
-            transform: scale(1.2) translateY(-5px);
-            outline: 3px solid #1565c0;
-            z-index: 10;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            background: #ffeb3b !important; transform: scale(1.2) translateY(-5px);
+            outline: 3px solid #1565c0; z-index: 10;
         }
     </style>
 </head>
@@ -74,7 +67,6 @@
 </div>
 
 <script>
-// --- (ロジック部分は前回の history / movePiece 等を継承) ---
 const SENTE = 1, GOTE = -1;
 let turn = SENTE;
 let board = Array(9).fill().map(() => Array(9).fill(null));
@@ -82,6 +74,7 @@ let hands = { [SENTE]: [], [GOTE]: [] };
 let selected = null; 
 let isCPUMode = false;
 let history = [];
+let lastMove = null; // { fr, fc, tr, tc } 直前の手を保持
 
 const PIECE_DATA = {
     '歩': { val: 1, moves: [[-1, 0]], jump: false, promote: 'と' },
@@ -97,8 +90,15 @@ const PIECE_DATA = {
     '龍': { val: 14, moves: [[-1, 0], [1, 0], [0, -1], [0, 1]], jump: true, extra: [[-1,-1],[-1,1],[1,-1],[1,1]] }
 };
 
+// --- ゲーム管理ロジック ---
+
 function saveHistory() {
-    history.push({ board: JSON.parse(JSON.stringify(board)), hands: JSON.parse(JSON.stringify(hands)), turn: turn });
+    history.push({ 
+        board: JSON.parse(JSON.stringify(board)), 
+        hands: JSON.parse(JSON.stringify(hands)), 
+        turn: turn,
+        lastMove: lastMove ? {...lastMove} : null
+    });
     document.getElementById('undo-btn').disabled = false;
 }
 
@@ -109,6 +109,7 @@ function undo() {
         if (history.length > 0) {
             const last = history.pop();
             board = last.board; hands = last.hands; turn = last.turn;
+            lastMove = last.lastMove;
         }
     }
     selected = null;
@@ -128,12 +129,14 @@ function resetGame() {
     if (confirm("リセットしますか？")) {
         board = Array(9).fill().map(() => Array(9).fill(null));
         hands = { [SENTE]: [], [GOTE]: [] };
-        history = []; document.getElementById('undo-btn').disabled = true;
+        history = []; lastMove = null;
+        document.getElementById('undo-btn').disabled = true;
         turn = SENTE; selected = null; init();
     }
 }
 
-// --- 判定ロジック群 (前回と同じ) ---
+// --- 駒の移動ロジック (簡略化して継承) ---
+
 function getRawMoves(r, c, p) {
     let valid = []; const isGold = PIECE_DATA[p.type].gold; const data = isGold ? PIECE_DATA['金'] : PIECE_DATA[p.type];
     data.moves.forEach(([dr, dc]) => {
@@ -186,7 +189,7 @@ function findKing(owner) {
     return null;
 }
 
-// --- 操作・描画 ---
+// --- 思考ルーチン (CPU) ---
 function cpuThink() {
     if (turn !== GOTE) return;
     saveHistory();
@@ -207,9 +210,11 @@ function cpuThink() {
             if (safe) possibleMoves.push({ tr: r, tc: c, pType: p, pIdx: idx, type: 'drop', score: -1 });
         }
     });
+
     if (possibleMoves.length > 0) {
         possibleMoves.sort((a, b) => b.score - a.score);
         const choice = possibleMoves.filter(m => m.score === possibleMoves[0].score)[Math.floor(Math.random() * possibleMoves.filter(m => m.score === possibleMoves[0].score).length)];
+        
         if (choice.type === 'move') {
             const p = board[choice.fr][choice.fc];
             if (PIECE_DATA[p.type].promote && (choice.tr >= 6 || choice.fr >= 6)) p.type = PIECE_DATA[p.type].promote;
@@ -218,8 +223,11 @@ function cpuThink() {
                 hands[GOTE].push(t);
             }
             board[choice.tr][choice.tc] = p; board[choice.fr][choice.fc] = null;
+            lastMove = { fr: choice.fr, fc: choice.fc, tr: choice.tr, tc: choice.tc };
         } else {
-            board[choice.tr][choice.tc] = { type: choice.pType, owner: GOTE }; hands[GOTE].splice(choice.pIdx, 1);
+            board[choice.tr][choice.tc] = { type: choice.pType, owner: GOTE }; 
+            hands[GOTE].splice(choice.pIdx, 1);
+            lastMove = { fr: null, fc: null, tr: choice.tr, tc: choice.tc }; // 打つ場合は元位置なし
         }
         finalizeTurn();
     }
@@ -241,13 +249,21 @@ function handleSquareClick(r, c) {
                 board[r][c] = { type, owner: turn }; if (isMate(-turn)) { board[r][c] = null; return alert("打ち歩詰めです"); }
                 board[r][c] = null;
             }
-            if (((type==='歩'||type==='香') && (turn===SENTE?r===0:r===8)) || (type==='桂' && (turn===SENTE?r<=1:r>=7))) return alert("行き場がありません");
-            saveHistory(); board[r][c] = { type, owner: turn }; hands[turn].splice(selected.pIdx, 1); finalizeTurn();
+            saveHistory(); 
+            board[r][c] = { type, owner: turn }; 
+            hands[turn].splice(selected.pIdx, 1);
+            lastMove = { fr: null, fc: null, tr: r, tc: c };
+            finalizeTurn();
         } else selected = null;
     } else if (selected?.type === 'board') {
         const moves = getLegalMoves(selected.r, selected.c);
-        if (moves.some(m => m[0] === r && m[1] === c)) { saveHistory(); movePiece(selected.r, selected.c, r, c); }
-        else if (selected.r === r && selected.c === c) selected = null; // 同じマスをクリックで解除
+        if (moves.some(m => m[0] === r && m[1] === c)) { 
+            saveHistory(); 
+            const fr = selected.r, fc = selected.c;
+            movePiece(fr, fc, r, c);
+            lastMove = { fr, fc, tr: r, tc: c };
+        }
+        else if (selected.r === r && selected.c === c) selected = null;
         else selected = (board[r][c]?.owner === turn) ? { type: 'board', r, c } : null;
     } else {
         if (board[r][c]?.owner === turn) selected = { type: 'board', r, c };
@@ -268,33 +284,34 @@ function movePiece(fr, fc, tr, tc) {
 function render() {
     const boardEl = document.getElementById('board'); boardEl.innerHTML = '';
     const moves = (selected?.type === 'board') ? getLegalMoves(selected.r, selected.c) : [];
+    
     for(let r=0; r<9; r++) for(let c=0; c<9; c++) {
         const cell = document.createElement('div');
-        cell.className = `cell ${selected?.type==='board'&&selected.r===r&&selected.c===c ? 'selected' : ''}`;
+        cell.className = 'cell';
+        
+        // 直前の指し手を強調
+        if (lastMove && ((lastMove.fr === r && lastMove.fc === c) || (lastMove.tr === r && lastMove.tc === c))) {
+            cell.classList.add('last-move');
+        }
+        
+        if (selected?.type==='board'&&selected.r===r&&selected.c===c) cell.classList.add('selected');
         if (moves.some(m => m[0] === r && m[1] === c)) cell.classList.add('movable');
+        
         const p = board[r][c];
         if(p) cell.innerHTML = `<div class="piece ${p.owner===SENTE?'sente':'gote'} ${['と','杏','圭','全','馬','龍'].includes(p.type)?'promoted':''}"> ${p.type} </div>`;
         cell.onclick = () => handleSquareClick(r, c); boardEl.appendChild(cell);
     }
+    
     [SENTE, GOTE].forEach(owner => {
         const side = owner === SENTE ? 'sente' : 'gote';
         const el = document.getElementById(`hand-${side}`);
         el.innerHTML = `${side==='sente'?'先手':'後手'}持駒:<br>`;
         hands[owner].forEach((p, i) => {
             const div = document.createElement('div');
-            // 持ち駒の選択状態を判定
             const isThisSelected = selected?.type==='hand' && selected.pIdx===i && turn===owner;
             div.className = `hand-piece ${isThisSelected ? 'selected' : ''}`;
             div.textContent = p;
-            div.onclick = (e) => { 
-                e.stopPropagation(); 
-                if(turn===owner) {
-                    // 同じ駒をクリックしたら解除、そうでなければ選択
-                    if(isThisSelected) selected = null;
-                    else selected = {type:'hand', pType:p, pIdx:i};
-                    render();
-                }
-            };
+            div.onclick = (e) => { e.stopPropagation(); if(turn===owner) { if(isThisSelected) selected=null; else selected={type:'hand', pType:p, pIdx:i}; render(); }};
             el.appendChild(div);
         });
     });
