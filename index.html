@@ -2,19 +2,18 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>将棋アプリ - リセット機能付き</title>
+    <title>将棋アプリ - コンピュータ対戦版</title>
     <style>
         :root { --board-bg: #f3c35d; --cell-size: 60px; }
         body { display: flex; flex-direction: column; align-items: center; background: #eee; font-family: "Sawarabi Mincho", serif; padding: 20px; }
         
-        /* ヘッダー・ボタンエリア */
-        .controls { margin-bottom: 15px; display: flex; gap: 10px; align-items: center; }
-        #status { font-size: 1.3rem; font-weight: bold; padding: 10px 20px; background: white; border-radius: 30px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .btn-reset { 
-            padding: 10px 20px; font-size: 1rem; cursor: pointer; background: #d32f2f; color: white; 
-            border: none; border-radius: 5px; font-weight: bold; transition: background 0.2s;
-        }
-        .btn-reset:hover { background: #b71c1c; }
+        .controls { margin-bottom: 15px; display: flex; gap: 15px; align-items: center; }
+        #status { font-size: 1.2rem; font-weight: bold; padding: 10px 20px; background: white; border-radius: 30px; min-width: 200px; text-align: center; }
+        
+        button { padding: 10px 15px; font-size: 0.9rem; cursor: pointer; border: none; border-radius: 5px; font-weight: bold; }
+        .btn-reset { background: #d32f2f; color: white; }
+        .btn-cpu { background: #2e7d32; color: white; }
+        .btn-cpu.active { background: #1565c0; box-shadow: inset 0 2px 4px rgba(0,0,0,0.3); }
 
         #game-container { display: flex; gap: 20px; align-items: flex-start; }
         .hand-area { width: 150px; background: #e0d0b0; border: 2px solid #666; padding: 10px; min-height: 350px; border-radius: 5px; }
@@ -26,28 +25,28 @@
             width: 48px; height: 54px; background: linear-gradient(145deg, #ffedbc, #e2bc63);
             display: flex; justify-content: center; align-items: center;
             clip-path: polygon(50% 0%, 100% 20%, 90% 100%, 10% 100%, 0% 20%);
-            font-size: 26px; font-weight: bold; user-select: none; box-shadow: inset 0 -3px rgba(0,0,0,0.2);
+            font-size: 26px; font-weight: bold; user-select: none;
         }
         .piece.sente { color: #000; }
         .piece.gote { color: #000; transform: rotate(180deg); }
         .piece.promoted { color: #d32f2f; }
 
         .selected .piece { background: #ffeb3b !important; }
-        .movable::after { content: ""; width: 16px; height: 16px; background: rgba(0,0,0,0.15); border-radius: 50%; position: absolute; z-index: 10; }
+        .movable::after { content: ""; width: 16px; height: 16px; background: rgba(0,0,0,0.15); border-radius: 50%; position: absolute; }
         
         .hand-piece { 
             display: inline-flex !important; margin: 4px; width: 40px; height: 45px; 
             background: #ffedbc; clip-path: polygon(50% 0%, 100% 20%, 90% 100%, 10% 100%, 0% 20%); 
             justify-content: center; align-items: center; font-size: 22px; cursor: pointer; 
         }
-        .hand-piece.selected { background: #ffeb3b; }
     </style>
 </head>
 <body>
 
 <div class="controls">
     <div id="status">先手の番です</div>
-    <button class="btn-reset" onclick="resetGame()">最初からやり直す</button>
+    <button class="btn-cpu" id="cpu-toggle" onclick="toggleCPU()">コンピュータ対戦: OFF</button>
+    <button class="btn-reset" onclick="resetGame()">リセット</button>
 </div>
 
 <div id="game-container">
@@ -62,40 +61,44 @@ let turn = SENTE;
 let board = Array(9).fill().map(() => Array(9).fill(null));
 let hands = { [SENTE]: [], [GOTE]: [] };
 let selected = null; 
+let isCPUMode = false;
 
 const PIECE_DATA = {
-    '歩': { moves: [[-1, 0]], jump: false, promote: 'と' },
-    '香': { moves: [[-1, 0]], jump: true, promote: '杏' },
-    '桂': { moves: [[-2, -1], [-2, 1]], jump: false, promote: '圭' },
-    '銀': { moves: [[-1, -1], [-1, 0], [-1, 1], [1, -1], [1, 1]], jump: false, promote: '全' },
-    '金': { moves: [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, 0]], jump: false },
-    '角': { moves: [[-1, -1], [-1, 1], [1, -1], [1, 1]], jump: true, promote: '馬' },
-    '飛': { moves: [[-1, 0], [1, 0], [0, -1], [0, 1]], jump: true, promote: '龍' },
-    '玉': { moves: [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]], jump: false },
-    'と': { gold: true }, '杏': { gold: true }, '圭': { gold: true }, '全': { gold: true },
-    '馬': { moves: [[-1, -1], [-1, 1], [1, -1], [1, 1]], jump: true, extra: [[-1,0],[1,0],[0,-1],[0,1]] },
-    '龍': { moves: [[-1, 0], [1, 0], [0, -1], [0, 1]], jump: true, extra: [[-1,-1],[-1,1],[1,-1],[1,1]] }
+    '歩': { val: 1, moves: [[-1, 0]], jump: false, promote: 'と' },
+    '香': { val: 3, moves: [[-1, 0]], jump: true, promote: '杏' },
+    '桂': { val: 4, moves: [[-2, -1], [-2, 1]], jump: false, promote: '圭' },
+    '銀': { val: 5, moves: [[-1, -1], [-1, 0], [-1, 1], [1, -1], [1, 1]], jump: false, promote: '全' },
+    '金': { val: 6, moves: [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, 0]], jump: false },
+    '角': { val: 8, moves: [[-1, -1], [-1, 1], [1, -1], [1, 1]], jump: true, promote: '馬' },
+    '飛': { val: 10, moves: [[-1, 0], [1, 0], [0, -1], [0, 1]], jump: true, promote: '龍' },
+    '玉': { val: 100, moves: [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]], jump: false },
+    'と': { val: 7, gold: true }, '杏': { val: 7, gold: true }, '圭': { val: 7, gold: true }, '全': { val: 7, gold: true },
+    '馬': { val: 12, moves: [[-1, -1], [-1, 1], [1, -1], [1, 1]], jump: true, extra: [[-1,0],[1,0],[0,-1],[0,1]] },
+    '龍': { val: 14, moves: [[-1, 0], [1, 0], [0, -1], [0, 1]], jump: true, extra: [[-1,-1],[-1,1],[1,-1],[1,1]] }
 };
 
 // --- ゲーム管理 ---
+function toggleCPU() {
+    isCPUMode = !isCPUMode;
+    const btn = document.getElementById('cpu-toggle');
+    btn.textContent = `コンピュータ対戦: ${isCPUMode ? 'ON' : 'OFF'}`;
+    btn.classList.toggle('active', isCPUMode);
+    if (isCPUMode && turn === GOTE) setTimeout(cpuThink, 500);
+}
 
 function resetGame() {
-    if (confirm("対局をリセットして最初からやり直しますか？")) {
+    if (confirm("リセットしますか？")) {
         board = Array(9).fill().map(() => Array(9).fill(null));
         hands = { [SENTE]: [], [GOTE]: [] };
-        turn = SENTE;
-        selected = null;
-        init();
+        turn = SENTE; selected = null; init();
     }
 }
 
-// --- ロジック ---
-
+// --- 駒の移動・判定ロジック ---
 function getRawMoves(r, c, p) {
     let valid = [];
     const isGoldType = PIECE_DATA[p.type].gold;
     const data = isGoldType ? PIECE_DATA['金'] : PIECE_DATA[p.type];
-    
     data.moves.forEach(([dr, dc]) => {
         let nr = r + dr * p.owner, nc = c + dc * p.owner;
         if (data.jump && !isGoldType) {
@@ -111,9 +114,7 @@ function getRawMoves(r, c, p) {
     if (data.extra) {
         data.extra.forEach(([dr, dc]) => {
             let nr = r + dr, nc = c + dc;
-            if (nr >= 0 && nr < 9 && nc >= 0 && nc < 9) {
-                if (!board[nr][nc] || board[nr][nc].owner !== p.owner) valid.push([nr, nc]);
-            }
+            if (nr >= 0 && nr < 9 && nc >= 0 && nc < 9 && (!board[nr][nc] || board[nr][nc].owner !== p.owner)) valid.push([nr, nc]);
         });
     }
     return valid;
@@ -135,7 +136,6 @@ function isCheck(color) {
 
 function getLegalMoves(r, c) {
     const p = board[r][c];
-    if (!p) return [];
     return getRawMoves(r, c, p).filter(([tr, tc]) => {
         const target = board[tr][tc];
         board[tr][tc] = p; board[r][c] = null;
@@ -173,22 +173,101 @@ function findKing(owner) {
     return null;
 }
 
-// --- 動作 ---
+// --- 思考ルーチン (CPU) ---
+function cpuThink() {
+    if (turn !== GOTE) return;
+    let possibleMoves = [];
 
-function dropPiece(r, c) {
-    const type = selected.pieceType;
-    if (type === '歩') {
-        for(let i=0; i<9; i++) if(board[i][c]?.type==='歩' && board[i][c]?.owner===turn) return alert("二歩です");
-        board[r][c] = { type, owner: turn };
-        if (isMate(-turn)) { board[r][c] = null; return alert("打ち歩詰めです"); }
-        board[r][c] = null;
+    // 合法手を集める
+    for (let r=0; r<9; r++) {
+        for (let c=0; c<9; c++) {
+            if (board[r][c]?.owner === GOTE) {
+                getLegalMoves(r, c).forEach(m => {
+                    let score = board[m[0]][m[1]] ? PIECE_DATA[board[m[0]][m[1]].type].val : 0;
+                    possibleMoves.push({ fr: r, fc: c, tr: m[0], tc: m[1], type: 'move', score });
+                });
+            }
+        }
     }
-    if ((type==='歩'||type==='香') && (turn===SENTE?r===0:r===8)) return alert("行き場がありません");
-    if (type==='桂' && (turn===SENTE?r<=1:r>=7)) return alert("行き場がありません");
+    hands[GOTE].forEach((p, idx) => {
+        for (let r=0; r<9; r++) {
+            for (let c=0; c<9; c++) {
+                if (!board[r][c]) {
+                    // 二歩・行き場なし・打ち歩詰めチェック
+                    if (p === '歩') {
+                        let hasFu = false;
+                        for(let i=0; i<9; i++) if(board[i][c]?.type==='歩' && board[i][c]?.owner===GOTE) hasFu=true;
+                        if(hasFu || r === 8) continue;
+                    }
+                    if ((p==='香' && r===8) || (p==='桂' && r>=7)) continue;
+                    
+                    board[r][c] = { type: p, owner: GOTE };
+                    const safe = !isCheck(GOTE) && !isMate(SENTE);
+                    board[r][c] = null;
+                    if (safe) possibleMoves.push({ tr: r, tc: c, pType: p, pIdx: idx, type: 'drop', score: -1 });
+                }
+            }
+        }
+    });
 
-    board[r][c] = { type, owner: turn };
-    hands[turn].splice(selected.pieceIndex, 1);
-    finalizeTurn();
+    if (possibleMoves.length > 0) {
+        // スコア順にソート（駒を取る手を優先）
+        possibleMoves.sort((a, b) => b.score - a.score);
+        const bestScore = possibleMoves[0].score;
+        const bestMoves = possibleMoves.filter(m => m.score === bestScore);
+        const choice = bestMoves[Math.floor(Math.random() * bestMoves.length)];
+
+        if (choice.type === 'move') {
+            const p = board[choice.fr][choice.fc];
+            if (PIECE_DATA[p.type].promote && (choice.tr >= 6 || choice.fr >= 6)) p.type = PIECE_DATA[p.type].promote;
+            if (board[choice.tr][choice.tc]) {
+                let t = board[choice.tr][choice.tc].type;
+                for (let k in PIECE_DATA) if(PIECE_DATA[k].promote === t) t = k;
+                hands[GOTE].push(t);
+            }
+            board[choice.tr][choice.tc] = p; board[choice.fr][choice.fc] = null;
+        } else {
+            board[choice.tr][choice.tc] = { type: choice.pType, owner: GOTE };
+            hands[GOTE].splice(choice.pIdx, 1);
+        }
+        finalizeTurn();
+    }
+}
+
+// --- ターン制御 ---
+function finalizeTurn() {
+    turn *= -1; selected = null; render();
+    if (isMate(turn)) {
+        setTimeout(() => alert((turn === SENTE ? "後手" : "先手") + "の勝ちです！"), 100);
+    } else if (isCPUMode && turn === GOTE) {
+        setTimeout(cpuThink, 600);
+    }
+}
+
+function handleSquareClick(r, c) {
+    if (isCPUMode && turn === GOTE) return; // CPU思考中は操作不可
+    if (selected?.type === 'hand') {
+        if (!board[r][c]) {
+            const type = selected.pType;
+            if (type === '歩') {
+                for(let i=0; i<9; i++) if(board[i][c]?.type==='歩' && board[i][c]?.owner===turn) return alert("二歩です");
+                board[r][c] = { type, owner: turn };
+                if (isMate(-turn)) { board[r][c] = null; return alert("打ち歩詰めです"); }
+                board[r][c] = null;
+            }
+            if (((type==='歩'||type==='香') && (turn===SENTE?r===0:r===8)) || (type==='桂' && (turn===SENTE?r<=1:r>=7))) return alert("行き場がありません");
+            board[r][c] = { type, owner: turn };
+            hands[turn].splice(selected.pIdx, 1);
+            finalizeTurn();
+        } else selected = null;
+    } else if (selected?.type === 'board') {
+        const moves = getLegalMoves(selected.r, selected.c);
+        if (moves.some(m => m[0] === r && m[1] === c)) movePiece(selected.r, selected.c, r, c);
+        else selected = (board[r][c]?.owner === turn) ? { type: 'board', r, c } : null;
+    } else {
+        if (board[r][c]?.owner === turn) selected = { type: 'board', r, c };
+    }
+    render();
 }
 
 function movePiece(fr, fc, tr, tc) {
@@ -205,26 +284,6 @@ function movePiece(fr, fc, tr, tc) {
     finalizeTurn();
 }
 
-function finalizeTurn() {
-    turn *= -1; selected = null; render();
-    if (isMate(turn)) setTimeout(() => alert((turn === SENTE ? "後手" : "先手") + "の勝ちです！"), 100);
-}
-
-function handleSquareClick(r, c) {
-    if (selected?.type === 'hand') {
-        if (!board[r][c]) dropPiece(r, c);
-        else selected = null;
-    } else if (selected?.type === 'board') {
-        const moves = getLegalMoves(selected.r, selected.c);
-        if (selected.r === r && selected.c === c) selected = null;
-        else if (moves.some(m => m[0] === r && m[1] === c)) movePiece(selected.r, selected.c, r, c);
-        else selected = (board[r][c]?.owner === turn) ? { type: 'board', r, c } : null;
-    } else {
-        if (board[r][c]?.owner === turn) selected = { type: 'board', r, c };
-    }
-    render();
-}
-
 function render() {
     const boardEl = document.getElementById('board');
     boardEl.innerHTML = '';
@@ -235,7 +294,7 @@ function render() {
             cell.className = `cell ${selected?.r===r && selected?.c===c ? 'selected' : ''}`;
             if (moves.some(m => m[0] === r && m[1] === c)) cell.classList.add('movable');
             const p = board[r][c];
-            if(p) cell.innerHTML = `<div class="piece ${p.owner===SENTE?'sente':'gote'} ${['と','杏','圭','全','馬','龍'].includes(p.type)?'promoted':''}"> ${p.type} </div>`;
+            if(p) cell.innerHTML = `<div class="piece ${p.owner===SENTE?'sente':'gote'} ${PIECE_DATA[p.type].gold || ['馬','龍'].includes(p.type) ?'promoted':''}"> ${p.type} </div>`;
             cell.onclick = () => handleSquareClick(r, c);
             boardEl.appendChild(cell);
         }
@@ -246,9 +305,9 @@ function render() {
         el.innerHTML = `${side==='sente'?'先手':'後手'}持駒:<br>`;
         hands[owner].forEach((p, i) => {
             const div = document.createElement('div');
-            div.className = `hand-piece ${selected?.type==='hand'&&selected.pieceIndex===i&&turn===owner?'selected':''}`;
+            div.className = `hand-piece ${selected?.type==='hand'&&selected.pIdx===i&&turn===owner?'selected':''}`;
             div.textContent = p;
-            div.onclick = (e) => { e.stopPropagation(); if(turn===owner) { if(selected?.pieceIndex===i) selected=null; else selected={type:'hand', pieceType:p, pieceIndex:i}; render(); }};
+            div.onclick = (e) => { e.stopPropagation(); if(turn===owner) { selected={type:'hand', pType:p, pIdx:i}; render(); }};
             el.appendChild(div);
         });
     });
